@@ -1,0 +1,9 @@
+# EchoMe — Python bağımlılıkları
+# Not: torch/torchaudio, chatterbox-tts tarafından da çekilir; sürümler
+# uyumlu kalsın diye alt sınır veriyoruz.
+chatterbox-tts==0.1.7
+torch>=2.2
+torchaudio>=2.2
+fastapi>=0.110
+uvicorn>=0.27
+python-multipart>=0.0.9

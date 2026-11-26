@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#08090b" />
+  <title>EchoMe — Metinden Sese</title>
+  <meta name="description" content="EchoMe: Chatterbox ile kendi sesinizi referans alarak yerel olarak metinden konuşma üretin." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff7a59'/%3E%3Cstop offset='1' stop-color='%23ffc46b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cg stroke='%23201208' stroke-width='4' stroke-linecap='round'%3E%3Cpath d='M18 30v4M25 24v16M32 19v26M39 25v14M46 29v6'/%3E%3C/g%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="orb orb-c"></div>
+    <div class="grain"></div>
+  </div>
+
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 13v-2M8 16V8M12 19V5M16 16V8M20 13v-2" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Echo<span class="accent-word">Me</span></h1>
+          <p>Kendi sesinle, cihazında çalışan metinden sese stüdyosu.</p>
+        </div>
+      </div>
+      <div class="status-cluster">
+        <div class="status-pill" id="modelPill" data-state="loading" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="modelText">Model yükleniyor</span>
+        </div>
+        <div class="device-pill" id="devicePill" title="Hesaplama birimi">—</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <!-- ================= COMPOSER ================= -->
+      <section class="card composer" aria-labelledby="composerTitle">
+        <div class="card-head">
+          <div>
+            <h2 id="composerTitle">Metin ve ayarlar</h2>
+            <p class="card-sub">Metnini yaz, sesini seç, üretmeye başla.</p>
+          </div>
+        </div>
+
+        <div class="banner error" id="modelError" hidden>
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 8v5M12 17h.01M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div>
+            <strong>Model yüklenemedi</strong>
+            <span id="modelErrorText">Ayrıntı için terminal çıktısına bakın.</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="text">Konuşma metni</label>
+            <div class="label-tools">
+              <button type="button" class="text-btn" id="clearText">Temizle</button>
+              <span class="counter" id="charCount">0 / 6000</span>
+            </div>
+          </div>
+          <div class="textarea-wrap">
+            <textarea id="text" maxlength="6000" spellcheck="true" placeholder="Merhaba! Bu ses, kendi kaydettiğim referans sesim kullanılarak yapay zekâ ile oluşturuldu.&#10;&#10;Anlatmak istediğin her şeyi buraya yazabilirsin."></textarea>
+            <div class="textarea-glow" aria-hidden="true"></div>
+          </div>
+          <p class="hint">Uzun metinler otomatik olarak cümle sınırlarından bölünüp birleştirilir.</p>
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <span class="label" id="langLabel">Dil</span>
+            <span class="hint inline">language_id</span>
+          </div>
+          <div class="segmented" role="group" aria-labelledby="langLabel">
+            <button type="button" data-lang="tr" class="active" aria-pressed="true"><span class="flag">TR</span> Türkçe</button>
+            <button type="button" data-lang="en" aria-pressed="false"><span class="flag">EN</span> English</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="refInput">Referans ses</label>
+            <span class="hint inline">audio_prompt_path</span>
+          </div>
+          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Referans ses dosyası seç">
+            <input type="file" id="refInput" accept=".wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.aiff,.aif,audio/*" hidden />
+            <div class="drop-empty" id="dropEmpty">
+              <div class="drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="drop-copy">
+                <strong>Ses dosyası seç veya buraya sürükle</strong>
+                <span>WAV önerilir · MP3, FLAC, M4A · en fazla 30 MB</span>
+              </div>
+              <span class="btn-mini">Gözat</span>
+            </div>
+
+            <div class="drop-filled" id="dropFilled" hidden>
+              <div class="drop-icon solid" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M9 18V6l10-2v12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="16.5" cy="16" r="2.5" stroke="currentColor" stroke-width="1.7"/></svg>
+              </div>
+              <div class="drop-copy">
+                <strong id="refName">referans.wav</strong>
+                <span id="refMeta">—</span>
+              </div>
+              <div class="ref-actions">
+                <button type="button" class="icon-btn" id="refPlay" title="Referansı dinle" aria-label="Referansı dinle">
+                  <svg class="i-play" viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor"/></svg>
+                  <svg class="i-stop" viewBox="0 0 24 24" fill="none" hidden><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="refRemove" title="Kaldır" aria-label="Referans sesi kaldır">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="hint">Boş bırakırsan modelin varsayılan sesi kullanılır.</p>
+        </div>
+
+        <div class="sliders">
+          <div class="slider-field">
+            <div class="label-row">
+              <label for="exRange">Exaggeration</label>
+              <input class="value-input" id="exNum" type="number" min="0.25" max="2" step="0.01" value="0.50" inputmode="decimal" aria-label="Exaggeration değeri" />
+            </div>
+            <input type="range" id="exRange" min="0.25" max="2" step="0.01" value="0.50" aria-label="Exaggeration" />
+            <p class="hint">Duygu yoğunluğu · 0.25 – 2.00</p>
+          </div>
+
+          <div class="slider-field">
+            <div class="label-row">
+              <label for="cfgRange">CFG weight</label>
+              <input class="value-input" id="cfgNum" type="number" min="0.2" max="1" step="0.01" value="0.50" inputmode="decimal" aria-label="CFG weight değeri" />
+            </div>
+            <input type="range" id="cfgRange" min="0.2" max="1" step="0.01" value="0.50" aria-label="CFG weight" />
+            <p class="hint">Ses benzerliği / rehberlik · 0.20 – 1.00</p>
+          </div>
+
+          <div class="slider-field">
+            <div class="label-row">
+              <label for="tempRange">Temperature</label>
+              <input class="value-input" id="tempNum" type="number" min="0.05" max="5" step="0.01" value="0.80" inputmode="decimal" aria-label="Temperature değeri" />
+            </div>
+            <input type="range" id="tempRange" min="0.05" max="5" step="0.01" value="0.80" aria-label="Temperature" />
+            <p class="hint">Rastgelelik / çeşitlilik · 0.05 – 5.00</p>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn primary" id="generateBtn">
+            <svg class="spark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.9 5.3L19 10.2l-5.1 1.9L12 17.5l-1.9-5.4L5 10.2l5.1-1.9L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" fill="currentColor"/></svg>
+            <span id="generateLabel">Ses üret</span>
+            <span class="spinner" aria-hidden="true"></span>
+            <kbd class="shortcut">⌘ ↵</kbd>
+          </button>
+          <button type="button" class="btn ghost" id="cancelBtn" hidden>İptal</button>
+        </div>
+
+        <div class="progress" id="progressWrap" hidden aria-live="polite">
+          <div class="progress-inner">
+            <span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+            <span class="progress-stage" id="progressStage">Hazırlanıyor…</span>
+            <span class="progress-time" id="progressTime">0 sn</span>
+          </div>
+        </div>
+
+        <p class="privacy">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Tüm işlemler bu Mac'te yerel olarak çalışır; hiçbir ses buluta gönderilmez.
+        </p>
+      </section>
+
+      <!-- ================= SIDE ================= -->
+      <aside class="side">
+        <section class="card output" aria-labelledby="outputTitle">
+          <div class="card-head compact">
+            <h2 id="outputTitle">Çıktı</h2>
+            <span class="tag">WAV · 24 kHz</span>
+          </div>
+
+          <div class="player-empty" id="playerEmpty">
+            <div class="empty-art" aria-hidden="true">
+              <svg viewBox="0 0 160 64" fill="none">
+                <g stroke="url(#waveGrad)" stroke-width="3" stroke-linecap="round">
+                  <path d="M8 32v0M16 27v10M24 21v22M32 26v12M40 15v34M48 23v18M56 12v40M64 20v24M72 8v48M80 18v28M88 10v44M96 22v20M104 14v36M112 25v14M120 19v26M128 27v10M136 22v20M144 29v6M152 32v0"/>
+                </g>
+                <defs>
+                  <linearGradient id="waveGrad" x1="0" y1="32" x2="160" y2="32" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#ff7a59" stop-opacity=".25"/>
+                    <stop offset=".5" stop-color="#ffc46b" stop-opacity=".7"/>
+                    <stop offset="1" stop-color="#ff7a59" stop-opacity=".25"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <strong>Henüz bir kayıt yok</strong>
+            <p>Metnini yaz, dilini seç ve ilk sesini üret.</p>
+          </div>
+
+          <div class="player" id="player" hidden>
+            <div class="player-head">
+              <button type="button" class="play-btn" id="playBtn" aria-label="Oynat">
+                <svg class="i-play" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.5 5.6v12.8a1 1 0 0 0 1.5.87l10-6.4a1 1 0 0 0 0-1.74l-10-6.4a1 1 0 0 0-1.5.87Z" fill="currentColor"/></svg>
+                <svg class="i-pause" viewBox="0 0 24 24" fill="none" aria-hidden="true" hidden><rect x="7" y="5.5" width="3.6" height="13" rx="1.4" fill="currentColor"/><rect x="13.4" y="5.5" width="3.6" height="13" rx="1.4" fill="currentColor"/></svg>
+              </button>
+              <div class="player-copy">
+                <p class="player-title" id="playerTitle">—</p>
+                <div class="chips" id="playerChips"></div>
+              </div>
+            </div>
+
+            <div class="viz-wrap">
+              <canvas id="viz" aria-hidden="true"></canvas>
+            </div>
+
+            <div class="seek-row">
+              <span id="curTime">0:00</span>
+              <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Ses konumu" />
+              <span id="durTime">0:00</span>
+            </div>
+
+            <div class="player-actions">
+              <a class="btn small primary-soft" id="downloadBtn" href="#">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                WAV indir
+              </a>
+              <a class="btn small ghost" id="openBtn" href="#" target="_blank" rel="noopener">Yeni sekmede aç</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="card history" aria-labelledby="historyTitle">
+          <div class="card-head compact">
+            <h2 id="historyTitle">Son üretimler</h2>
+            <span class="tag" id="histCount">0</span>
+          </div>
+          <div id="historyEmpty" class="history-empty">Bu oturumda ürettiğin sesler burada listelenir.</div>
+          <ul class="history-list" id="historyList"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <span>EchoMe · Chatterbox Multilingual ile yerel çıkarım</span>
+      <span class="footer-sep">·</span>
+      <span>Suç ve benzeri içerik üretmeyin. Ses klonlarken gerekli izinleri alın.</span>
+    </footer>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

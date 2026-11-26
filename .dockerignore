@@ -1,0 +1,12 @@
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+outputs/
+uploads/
+.DS_Store
+*.log
+layout-*.html
+.idea/
+.vscode/

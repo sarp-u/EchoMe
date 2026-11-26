@@ -62,10 +62,15 @@ için performans beklentisi:
 
 | İşlem | CPU Basic (2 vCPU) | Mac (M1, MPS) |
 | --- | --- | --- |
-| Modelin yüklenmesi | ~2–5 dakika | ~20–60 saniye |
-| 5–6 saniyelik kısa cümle | ~3–8 dakika | ~25–50 saniye |
-| 30 saniyelik metin | ~15–40 dakika | ~2–4 dakika |
+| Modelin yüklenmesi | ~1–3 dakika | ~20–60 saniye |
+| 5–6 saniyelik kısa cümle | ~1–2 dakika | ~25–50 saniye |
+| 30 saniyelik metin | ~6–10 dakika | ~2–4 dakika |
 | Eşzamanlı kullanıcı | 1 (kuyruk) | 1 (kuyruk) |
+
+> Ölçüm notu: M1 üzerinde **2 thread** ile 4.8 saniyelik ses 34.5 saniyede
+> üretildi (7.2× gerçek zaman). HF'nin 2 vCPU Xeon çekirdekleri tek çekirdekte
+> kabaca 1.5–2.5× daha yavaş olduğundan yukarıdaki aralıklar tahminidir;
+> gerçek süre Space'in yüküne göre değişir.
 
 Yani çalışır ama **demo için bile sabır ister**. Ayrıca:
 
@@ -134,7 +139,7 @@ yerine token girin).
   sürebilir ve imaj ~6–7 GB olur. Build limitine takılırsa Dockerfile'daki
   `snapshot_download` satırını kaldırın: model ilk açılışta indirilir (cold
   start daha uzun olur).
-- Space uyandığında modelin CPU'da yüklenmesi 2–5 dakika sürebilir; arayüz
+- Space uyandığında modelin CPU'da yüklenmesi 1–3 dakika sürebilir; arayüz
   "Model yükleniyor" durumunda bekler.
 - Uzun metinlerde CPU üretimi çok uzun sürebilir; demo için kısa metinler
   kullanın.

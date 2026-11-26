@@ -50,21 +50,34 @@ Alternatifler:
 Mac'in uyumaması için: `caffeinate -dimsu` ile çalıştırın veya Güç
 Ayarları'ndan uykuyu kapatın. Kapak kapanınca yayın durur.
 
-## Seçenek 2 — Hugging Face Spaces (ücretsiz kalıcı URL, CPU)
+## Seçenek 2 — Hugging Face Spaces (CPU, PRO gerekir)
 
-Ücretsiz CPU Space yaklaşık 2 vCPU / 16 GB RAM sunar. Kalıcı bir URL alırsınız
-ama:
+> **Güncel HF politikası:** Yeni **Gradio veya Docker** Space oluşturmak ücretli
+> plan gerektirir (kişisel hesap için **PRO, $9/ay**). Ücretsiz hesaplar
+> yalnızca **2 adet Gradio ZeroGPU Space** açabilir. Bu proje Docker + FastAPI
+> olduğu için ücretsiz hesapla yayınlanamaz.
 
-- CPU'da üretim **dakikalar** sürebilir (Mac'teki MPS'e göre çok yavaş).
-- Ücretsiz Space'ler **herkese açıktır** → `ECHOME_PASSWORD` şart.
+CPU Basic donanımı 2 vCPU / 16 GB RAM / 50 GB geçici disk sunar. Bu uygulama
+için performans beklentisi:
+
+| İşlem | CPU Basic (2 vCPU) | Mac (M1, MPS) |
+| --- | --- | --- |
+| Modelin yüklenmesi | ~2–5 dakika | ~20–60 saniye |
+| 5–6 saniyelik kısa cümle | ~3–8 dakika | ~25–50 saniye |
+| 30 saniyelik metin | ~15–40 dakika | ~2–4 dakika |
+| Eşzamanlı kullanıcı | 1 (kuyruk) | 1 (kuyruk) |
+
+Yani çalışır ama **demo için bile sabır ister**. Ayrıca:
+
+- Space'ler **herkese açıktır** → `ECHOME_PASSWORD` şart.
 - Disk geçicidir: Space yeniden başlarsa üretim geçmişi silinir.
-- Ücretsiz Space'ler hareketsizlikten sonra uyur; ilk istekte yeniden açılış +
-  model yükleme gerekir.
+- Hareketsizlikten sonra uyur; ilk istekte yeniden açılış + model yükleme gerekir.
+- Uzun metinler tek kullanıcı tarafından dakikalarca kuyruğu bloke eder.
 
 ### Adımlar
 
-1. https://huggingface.co/new-space → **SDK: Docker**, **Hardware: CPU basic**
-   (ücretsiz), görünürlük: Public.
+1. https://huggingface.co/new-space → **SDK: Docker**, **Hardware: CPU basic**,
+   görünürlük: Public. (Space oluşturmak için PRO hesap gerekir.)
 2. Space deposunu klonlayın ve proje dosyalarını kopyalayın:
 
 ```bash
@@ -121,11 +134,33 @@ yerine token girin).
   sürebilir ve imaj ~6–7 GB olur. Build limitine takılırsa Dockerfile'daki
   `snapshot_download` satırını kaldırın: model ilk açılışta indirilir (cold
   start daha uzun olur).
-- Space uyandığında modelin CPU'da yüklenmesi 1–2 dakika sürebilir; arayüz
+- Space uyandığında modelin CPU'da yüklenmesi 2–5 dakika sürebilir; arayüz
   "Model yükleniyor" durumunda bekler.
 - Uzun metinlerde CPU üretimi çok uzun sürebilir; demo için kısa metinler
   kullanın.
-- Ücretsiz Space'te özel (private) görünürlük yoktur; erişimi şifre korur.
+- Ücretsiz görünürlükte özel (private) Space yoktur; erişimi şifre korur.
+
+### Daha hızlı HF alternatifleri
+
+| Donanım | Fiyat | Bu uygulama için |
+| --- | --- | --- |
+| CPU Basic (2 vCPU) | PRO $9/ay | Çalışır, çok yavaş |
+| CPU Upgrade (8 vCPU) | ~$0.03/saat (~$22/ay) | ~3–4× daha hızlı, hâlâ yavaş |
+| Nvidia T4 small | ~$0.40/saat (~$288/ay) | Hızlı, hobbi için pahalı |
+| **ZeroGPU** (RTX Pro 6000) | Ücretsiz 5 dk/gün, PRO 40 dk/gün | Çok hızlı ama **yalnızca Gradio** |
+
+**ZeroGPU** cazip görünse de bu proje için doğrudan uyumlu değil:
+
+- ZeroGPU yalnızca **Gradio SDK** ile çalışır; mevcut FastAPI + özel HTML
+  arayüzü çalışmaz. Gradio sarmalayıcı yazmak gerekir.
+- ZeroGPU **PyTorch ≥ 2.8** destekler; Chatterbox 0.1.7 ise `torch==2.6.0`
+  sabitler. Sürüm yükseltmesi test edilmeden garanti değildir.
+- Ücretsiz hesap günde **5 dakika**, PRO **40 dakika** GPU kotası verir; kota
+  dolunca kuyruk/limit devreye girer.
+
+Kısacası: **kalıcı ve ücretsiz** bir kurulum arıyorsan Mac + Cloudflare Tunnel
+en iyi seçenek. HF Spaces ancak PRO aboneliğiyle ve "yavaş demo" beklentisiyle
+mantıklı.
 
 ## Seçenek 3 — Google Colab / Kaggle + tünel (ücretsiz GPU, geçici demo)
 

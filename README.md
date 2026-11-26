@@ -397,7 +397,7 @@ Ayrıntılı, ücretsiz seçenekler: **[DEPLOY.md](DEPLOY.md)**
 | Yöntem | Maliyet | Hız | Kalıcılık |
 | --- | --- | --- | --- |
 | **Mac + Cloudflare Tunnel** | Ücretsiz | MPS ile en hızlı | Mac açık kaldıkça |
-| **Hugging Face Spaces (Docker, CPU)** | Ücretsiz | Dakikalar | Kalıcı URL, geçici disk |
+| **Hugging Face Spaces (Docker, CPU)** | PRO $9/ay | Dakikalar | Kalıcı URL, geçici disk |
 | **Colab / Kaggle + tünel** | Ücretsiz GPU | Hızlı | Oturum bitince ölür |
 | **Modal** | Aylık ücretsiz kredi | GPU ile hızlı | Sunucusuz |
 

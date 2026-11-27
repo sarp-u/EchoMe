@@ -720,6 +720,55 @@ textarea:focus {
   margin-bottom: 4px;
 }
 
+.pause-field {
+  margin: -4px 0 24px;
+}
+
+.pause-field .label-row {
+  margin-bottom: 7px;
+}
+
+.pause-field .hint {
+  margin-top: 8px;
+}
+
+.pause-field .hint strong {
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.link-btn {
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ffb48c;
+  font-size: 12px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 180, 140, 0.35);
+  text-underline-offset: 3px;
+  transition: color 0.16s ease, text-decoration-color 0.16s ease;
+}
+
+.link-btn:hover {
+  color: #ffd0b5;
+  text-decoration-color: rgba(255, 208, 181, 0.7);
+}
+
+.segmented.compact {
+  padding: 3px;
+  border-radius: 12px;
+}
+
+.segmented.compact button {
+  padding: 7px 14px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
 .value-input {
   width: 72px;
   height: 32px;

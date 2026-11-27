@@ -152,6 +152,20 @@
           </div>
         </div>
 
+        <div class="pause-field">
+          <div class="label-row">
+            <span class="label" id="pauseLabel">Duraklama</span>
+            <span class="hint inline">noktalama</span>
+          </div>
+          <div class="segmented compact" role="group" aria-labelledby="pauseLabel">
+            <button type="button" data-pause="natural" aria-pressed="false">Doğal</button>
+            <button type="button" data-pause="marked" class="active" aria-pressed="true">Belirgin</button>
+            <button type="button" data-pause="strong" aria-pressed="false">Güçlü</button>
+          </div>
+          <p class="hint">Noktalama duraklamalarını güçlendirir. Düz okumada <strong>exaggeration 0.7–0.9</strong> ve <strong>CFG 0.3–0.4</strong> deneyin.</p>
+          <button type="button" class="link-btn" id="expressivePreset">Önerilen ifadeli ayarları uygula</button>
+        </div>
+
         <div class="actions">
           <button type="button" class="btn primary" id="generateBtn">
             <svg class="spark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.9 5.3L19 10.2l-5.1 1.9L12 17.5l-1.9-5.4L5 10.2l5.1-1.9L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" fill="currentColor"/></svg>

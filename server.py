@@ -196,49 +196,213 @@ def _public_job(job: dict) -> dict:
 # Text chunking
 # ---------------------------------------------------------------------------
 
+# Pause profiles: seconds of silence inserted after each punctuation unit.
+# `split_clauses` also splits at ;/: (and `split_commas` at ,), which forces
+# short pauses instead of relying on the model to invent them.
+PAUSE_STYLES: dict[str, dict[str, Any]] = {
+    "natural": {
+        "label": "Doğal",
+        "sentence": 0.18,
+        "clause": 0.10,
+        "comma": 0.06,
+        "paragraph": 0.45,
+        "split_clauses": False,
+        "split_commas": False,
+    },
+    "marked": {
+        "label": "Belirgin",
+        "sentence": 0.28,
+        "clause": 0.16,
+        "comma": 0.10,
+        "paragraph": 0.60,
+        "split_clauses": True,
+        "split_commas": False,
+    },
+    "strong": {
+        "label": "Güçlü",
+        "sentence": 0.40,
+        "clause": 0.24,
+        "comma": 0.14,
+        "paragraph": 0.80,
+        "split_clauses": True,
+        "split_commas": True,
+    },
+}
+
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+_CLAUSE_SPLIT = re.compile(r"(?<=[;:])\s+")
+_ALL_SPLIT = re.compile(r"(?<=[,;:])\s+")
+MIN_CLAUSE_CHARS = 18
 
 
-def chunk_text(text: str, max_chars: int = 210) -> list[str]:
-    """Split text on sentence boundaries so each synthesis call stays short.
+def _merge_short_clauses(units: list[str], min_chars: int = MIN_CLAUSE_CHARS) -> list[str]:
+    """Keep tiny fragments ("Merhaba,") with the next clause.
 
-    Chatterbox caps generation at 1000 speech tokens, so long paragraphs would
-    otherwise be truncated. ~210 characters keeps each segment comfortably
-    inside that limit while still sounding natural.
+    A separate synthesis call for an 8-character greeting sounds drawn out and
+    costs a full model pass. Sentence-ending fragments are kept apart because
+    their pause is intentional; only short comma/semicolon clauses are merged.
     """
-    text = re.sub(r"\s+", " ", text).strip()
+    merged: list[str] = []
+    for unit in units:
+        previous = merged[-1] if merged else ""
+        if (
+            previous
+            and len(previous) < min_chars
+            and not previous.rstrip().endswith((".", "!", "?", "…"))
+        ):
+            merged[-1] = f"{previous} {unit}"
+        else:
+            merged.append(unit)
+    return merged
+
+
+def _normalise_speech_text(text: str) -> str:
+    """Make punctuation predictable before segmentation.
+
+    Chatterbox's own `punc_norm` turns ``...``, ``;`` and ``:`` into commas, so
+    those marks would otherwise never produce a full pause. We treat an
+    ellipsis as a sentence break and keep the original marks for the model.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("...", "…")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    # Space after sentence punctuation, but never inside 3.14 / 1,5 / 12:30.
+    text = re.sub(r"([.!?…])(?=[^\s\d.!?…])", r"\1 ", text)
+    text = re.sub(r",(?=[^\s\d])", ", ", text)
+    text = re.sub(r"([;:])(?=[^\s\d])", r"\1 ", text)
+    return text.strip()
+
+
+def _split_long_unit(unit: str, max_chars: int) -> list[str]:
+    """Split an over-long sentence so no call exceeds the model's token cap."""
+    pieces: list[str] = []
+    rest = unit.strip()
+    while len(rest) > max_chars:
+        cut = rest.rfind(", ", 0, max_chars)
+        if cut < max_chars * 0.45:
+            cut = rest.rfind(" ", 0, max_chars)
+        if cut <= 0:
+            cut = max_chars
+        piece = rest[:cut].strip()
+        if piece:
+            pieces.append(piece)
+        rest = rest[cut:].strip()
+    if rest:
+        pieces.append(rest)
+    return pieces
+
+
+def _pause_after(unit: str, preset: dict[str, Any], paragraph_end: bool) -> float:
+    if paragraph_end:
+        return float(preset["paragraph"])
+    stripped = unit.rstrip()
+    if stripped.endswith(("!", "?", ".", "…")):
+        return float(preset["sentence"])
+    if stripped.endswith((";", ":")):
+        return float(preset["clause"])
+    if stripped.endswith(","):
+        return float(preset["comma"])
+    return float(preset["clause"])
+
+
+def _cap_segments(
+    segments: list[dict[str, Any]], max_segments: int = 40, max_chars: int = 210
+) -> list[dict[str, Any]]:
+    """Merge adjacent segments when a very long text would create too many calls.
+
+    Short, typical inputs are untouched. For 6000-character articles this keeps
+    generation time bounded; the model still sees the punctuation inside the
+    merged chunk and usually adds its own short pause there.
+    """
+    while len(segments) > max_segments:
+        best_index: Optional[int] = None
+        best_length: Optional[int] = None
+        for index in range(len(segments) - 1):
+            if segments[index]["paragraph_end"]:
+                continue
+            combined = len(segments[index]["text"]) + 1 + len(segments[index + 1]["text"])
+            if combined > max_chars:
+                continue
+            if best_length is None or combined < best_length:
+                best_length = combined
+                best_index = index
+        if best_index is None:
+            break
+        left = segments[best_index]
+        right = segments[best_index + 1]
+        left["text"] = f"{left['text']} {right['text']}"
+        left["pause"] = right["pause"]
+        left["paragraph_end"] = right["paragraph_end"]
+        del segments[best_index + 1]
+    return segments
+
+
+def build_segments(
+    text: str, max_chars: int = 210, pause_style: str = "marked"
+) -> list[tuple[str, float]]:
+    """Split text into synthesis calls and decide the silence after each one.
+
+    Returns ``[(text, pause_after_seconds), ...]``. Pauses are inserted by the
+    worker when concatenating audio, which is the only reliable way to make
+    Chatterbox honour punctuation: the model has no SSML/pause token support.
+    """
+    preset = PAUSE_STYLES.get(pause_style, PAUSE_STYLES["marked"])
+    text = _normalise_speech_text(text)
     if not text:
         return []
 
-    units: list[str] = []
-    for sentence in _SENTENCE_SPLIT.split(text):
-        sentence = sentence.strip()
-        while len(sentence) > max_chars:
-            cut = sentence.rfind(", ", 0, max_chars)
-            if cut < max_chars * 0.45:
-                cut = sentence.rfind(" ", 0, max_chars)
-            if cut <= 0:
-                cut = max_chars
-            piece = sentence[:cut].strip()
-            if piece:
-                units.append(piece)
-            sentence = sentence[cut:].strip()
-        if sentence:
-            units.append(sentence)
+    segments: list[dict[str, Any]] = []
+    paragraphs = re.split(r"\n\s*\n+", text)
 
-    chunks: list[str] = []
-    for unit in units:
-        if chunks and len(chunks[-1]) + 1 + len(unit) <= max_chars:
-            chunks[-1] = f"{chunks[-1]} {unit}"
-        else:
-            chunks.append(unit)
+    for p_index, paragraph in enumerate(paragraphs):
+        lines = [line.strip() for line in paragraph.split("\n") if line.strip()]
+        for l_index, line in enumerate(lines):
+            line = re.sub(r"\s+", " ", line).strip()
+            if not line:
+                continue
 
-    # Fold a trailing crumb into the previous chunk when possible.
-    if len(chunks) > 1 and len(chunks[-1]) < 20:
-        tail = chunks.pop()
-        chunks[-1] = f"{chunks[-1]} {tail}"
+            units: list[str] = []
+            for sentence in _SENTENCE_SPLIT.split(line):
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                if preset["split_clauses"]:
+                    pattern = _ALL_SPLIT if preset["split_commas"] else _CLAUSE_SPLIT
+                    parts = [part.strip() for part in pattern.split(sentence) if part.strip()]
+                    units.extend(parts or [sentence])
+                else:
+                    units.append(sentence)
 
-    return [c for c in chunks if c.strip()]
+            if preset["split_clauses"]:
+                units = _merge_short_clauses(units)
+
+            last_line = l_index == len(lines) - 1
+            last_paragraph = p_index == len(paragraphs) - 1
+
+            for u_index, unit in enumerate(units):
+                last_unit = u_index == len(units) - 1
+                paragraph_end = last_unit and last_line and not last_paragraph
+                pause = _pause_after(unit, preset, paragraph_end)
+                if last_unit and last_line and last_paragraph:
+                    pause = 0.0
+
+                pieces = _split_long_unit(unit, max_chars)
+                for piece_index, piece in enumerate(pieces):
+                    is_last_piece = piece_index == len(pieces) - 1
+                    segments.append(
+                        {
+                            "text": piece,
+                            # Intermediate pieces of one long sentence flow on.
+                            "pause": pause if is_last_piece else 0.06,
+                            "paragraph_end": paragraph_end and is_last_piece,
+                        }
+                    )
+
+    segments = _cap_segments(segments, max_segments=40, max_chars=max_chars)
+    if segments:
+        segments[-1]["pause"] = 0.0
+    return [(item["text"], round(float(item["pause"]), 3)) for item in segments]
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +486,7 @@ def _run_job(
     exaggeration: float,
     cfg_weight: float,
     temperature: float,
+    pause_style: str,
     reference: Optional[Path],
     reference_duration: Optional[float],
 ) -> None:
@@ -344,10 +509,10 @@ def _run_job(
             model = MODEL.model
             sr = MODEL.sr
 
-            chunks = chunk_text(text)
-            if not chunks:
+            segments = build_segments(text, pause_style=pause_style)
+            if not segments:
                 raise ValueError("Metin boş.")
-            job["chunks_total"] = len(chunks)
+            job["chunks_total"] = len(segments)
 
             if reference is not None:
                 job["stage"] = "Referans ses analiz ediliyor"
@@ -364,25 +529,25 @@ def _run_job(
             import torch
             import torchaudio as ta
 
-            parts = []
-            for index, chunk in enumerate(chunks):
+            parts: list[tuple[Any, float]] = []
+            for index, (segment, pause_after) in enumerate(segments):
                 if job["cancel"].is_set():
                     raise JobCancelled()
                 job["status"] = "generating"
-                job["stage"] = f"Segment {index + 1}/{len(chunks)} üretiliyor"
-                job["progress"] = index / len(chunks)
+                job["stage"] = f"Segment {index + 1}/{len(segments)} üretiliyor"
+                job["progress"] = index / len(segments)
 
                 wav = model.generate(
-                    chunk,
+                    segment,
                     language_id=language_id,
                     audio_prompt_path=None,
                     exaggeration=exaggeration,
                     cfg_weight=cfg_weight,
                     temperature=temperature,
                 )
-                parts.append(wav.detach().cpu())
+                parts.append((wav.detach().cpu(), pause_after))
                 job["chunks_done"] = index + 1
-                job["progress"] = (index + 1) / len(chunks)
+                job["progress"] = (index + 1) / len(segments)
 
             if job["cancel"].is_set():
                 raise JobCancelled()
@@ -391,14 +556,18 @@ def _run_job(
             job["progress"] = 0.985
 
             if len(parts) == 1:
-                audio = parts[0]
+                audio = parts[0][0]
             else:
-                gap = torch.zeros((1, int(sr * 0.16)), dtype=parts[0].dtype)
                 pieces: list[Any] = []
-                for i, part in enumerate(parts):
+                for i, (part, pause_after) in enumerate(parts):
                     pieces.append(part)
-                    if i != len(parts) - 1:
-                        pieces.append(gap)
+                    if i != len(parts) - 1 and pause_after > 0:
+                        pieces.append(
+                            torch.zeros(
+                                (1, int(sr * pause_after)),
+                                dtype=part.dtype,
+                            )
+                        )
                 audio = torch.cat(pieces, dim=-1)
 
             out_path = OUTPUTS_DIR / f"{job_id}.wav"
@@ -430,7 +599,8 @@ def _run_job(
                 "exaggeration": round(exaggeration, 2),
                 "cfg_weight": round(cfg_weight, 2),
                 "temperature": round(temperature, 2),
-                "chunks": len(chunks),
+                "pause_style": pause_style,
+                "chunks": len(segments),
                 "reference_duration": round(reference_duration, 2) if reference_duration else None,
                 "created_at": created_at.isoformat(),
                 "elapsed": round(time.time() - job["created_at"], 1),
@@ -483,6 +653,7 @@ def _start_job(
     exaggeration: float,
     cfg_weight: float,
     temperature: float,
+    pause_style: str,
     reference: Optional[Path],
     reference_duration: Optional[float],
 ) -> dict:
@@ -513,6 +684,7 @@ def _start_job(
             exaggeration,
             cfg_weight,
             temperature,
+            pause_style,
             reference,
             reference_duration,
         ),
@@ -630,6 +802,7 @@ async def create_job(
     exaggeration: float = Form(0.5),
     cfg_weight: float = Form(0.5),
     temperature: float = Form(0.8),
+    pause_style: str = Form("marked"),
     reference: Optional[UploadFile] = File(None),
 ):
     text = (text or "").strip()
@@ -648,7 +821,12 @@ async def create_job(
         raise HTTPException(status_code=400, detail="CFG weight 0.20 ile 1.00 arasında olmalı.")
     if not 0.05 <= temperature <= 5.0:
         raise HTTPException(status_code=400, detail="Temperature 0.05 ile 5.00 arasında olmalı.")
-    if len(chunk_text(text)) > 40:
+    if pause_style not in PAUSE_STYLES:
+        raise HTTPException(
+            status_code=400,
+            detail="Geçersiz duraklama stili. natural, marked veya strong seçin.",
+        )
+    if len(build_segments(text, pause_style=pause_style)) > 40:
         raise HTTPException(
             status_code=400,
             detail="Metin çok uzun (40+ segment). Lütfen daha kısa bir metin deneyin.",
@@ -707,6 +885,7 @@ async def create_job(
         float(exaggeration),
         float(cfg_weight),
         float(temperature),
+        pause_style,
         norm_path,
         ref_duration,
     )

@@ -24,9 +24,10 @@ Silicon'da MPS ile) çalışır; internete açsan bile çıkarım yerelde kalır
   - [Exaggeration](#4-exaggeration)
   - [CFG weight](#5-cfg-weight)
   - [Temperature](#6-temperature)
-  - [Ses üret ve iptal](#7-ses-üret-ve-iptal)
-  - [Çıktı oynatıcı](#8-çıktı-oynatıcı)
-  - [Son üretimler](#9-son-üretimler)
+  - [Duraklama](#7-duraklama)
+  - [Ses üret ve iptal](#8-ses-üret-ve-iptal)
+  - [Çıktı oynatıcı](#9-çıktı-oynatıcı)
+  - [Son üretimler](#10-son-üretimler)
 - [Parametre özeti](#parametre-özeti)
 - [Nasıl çalışır?](#nasıl-çalışır)
 - [Kurulum](#kurulum)
@@ -45,8 +46,10 @@ Silicon'da MPS ile) çalışır; internete açsan bile çıkarım yerelde kalır
   24 kHz mono WAV'a çevrilir
 - 🎚️ **Üç ince ayar** — exaggeration, CFG weight ve temperature; kaydırıcı +
   elle giriş, 0.01 adım
-- ✂️ **Uzun metin desteği** — cümle sınırlarından ~210 karakterlik parçalara
-  bölünür, aralara kısa sessizlik eklenerek birleştirilir
+- ⏸️ **Duraklama profili** — Doğal / Belirgin / Güçlü; noktalama duraklamalarını
+  zorlar, düz okumayı engeller
+- ✂️ **Uzun metin desteği** — noktalama sınırlarından parçalara bölünür, aralara
+  seçilen duraklama profiline göre sessizlik eklenerek birleştirilir
 - ⏱️ **Canlı geri bildirim** — aşama metni, geçen süre, segment sayacı ve iptal
 - ▶️ **Özel oynatıcı** — dalga formu, konum çubuğu, yeni sekmede açma
 - 💾 **WAV indirme** — 24 kHz, 16-bit PCM, tarih damgalı dosya adı
@@ -69,11 +72,11 @@ Seslendirilecek metni buraya yazarsın.
 - Sağ üstteki sayaç **0 / 6000** karakter sınırını gösterir; **Temizle** bağlantısı
   metni tek tıkla boşaltır.
 - Metin boşsa üretim başlamaz; buton pasif kalır.
-- **Uzun metinler otomatik bölünür.** Chatterbox tek seferde ~1000 konuşma
-  token'ı üretebildiği için metin cümle/paragraf sınırlarından yaklaşık 210
-  karakterlik parçalara ayrılır. Her parça ayrı üretilir ve aralarına 0.16 saniye
-  sessizlik eklenerek tek bir WAV dosyası oluşturulur. Cümle ortasından bölünme
-  olmaması için noktalama sınırları tercih edilir.
+- **Metin noktalama sınırlarından bölünür.** Chatterbox tek seferde ~1000
+  konuşma token'ı üretebildiği için metin cümlelere/parçalara ayrılır; her parça
+  ayrı üretilir ve aralarına seçtiğin **Duraklama** profiline göre sessizlik
+  eklenir. Uzun cümleler ~210 karakterlik parçalara bölünür; cümle ortasından
+  bölünmemesi için önce virgül, sonra boşluk sınırı tercih edilir.
 
 > İpucu: Noktalama işaretleri tonlamayı belirgin biçimde etkiler. Virgül kısa,
 > nokta daha uzun duraklama yaratır; ünlem ve soru işareti ifadeyi canlandırır.
@@ -166,7 +169,44 @@ Diğer iki parametreyle karıştırmamak için:
 | `cfg_weight` | Metne ve referansa bağlılık, tempo |
 | `temperature` | Örnekleme rastgeleliği, sürpriz payı |
 
-### 7. Ses üret ve iptal
+### 7. Duraklama
+
+Chatterbox'un SSML veya özel duraklama token'ı yoktur; noktalama duraklamalarını
+model kendi inisiyatifiyle üretir. Bu yüzden düz okuma sorununu çözmek için
+EchoMe metni **noktalama sınırlarından parçalara ayırır**, her parçayı ayrı
+sentezler ve aralara ölçülü sessizlik ekler.
+
+Üç profil vardır:
+
+| Profil | Cümle sonu | Noktalı virgül / iki nokta | Virgül | Paragraf |
+| --- | --- | --- | --- | --- |
+| **Doğal** | ~0.18 sn | model | model | ~0.45 sn |
+| **Belirgin** (varsayılan) | ~0.28 sn | ~0.16 sn | model | ~0.60 sn |
+| **Güçlü** | ~0.40 sn | ~0.24 sn | ~0.14 sn | ~0.80 sn |
+
+- **Doğal**: yalnızca cümle sonlarında ve paragraflarda kısa duraklama. En akıcı
+  ve en hızlı seçenek.
+- **Belirgin**: cümle sonlarına ek olarak `;` ve `:` duraklamalarını da zorlar.
+  Günlük kullanım için dengeli.
+- **Güçlü**: virgüllerde bile duraklama ekler. Sunum, hikâye, reklam gibi
+  abartılı okumalarda işe yarar; çok sık virgül varsa konuşma kesik kesik
+  duyulabilir.
+
+Chatterbox'un kendi metin normalizasyonu `...`, `;` ve `:` işaretlerini
+virgüle çevirdiği için EchoMe bunları ayrıca işler: üç nokta cümle sonu sayılır,
+`;`/`:` ise güçlü duraklama noktası olur. Ondalık sayılar (`1,5`, `12:30`,
+`3.14`) bozulmaz.
+
+Tek tıkla denemek için **Önerilen ifadeli ayarları uygula** bağlantısı
+exaggeration 0.80, CFG 0.35, temperature 0.90 ve **Belirgin** profilini seçer.
+
+> Düz okuma hâlâ devam ederse: **CFG weight'i 0.30–0.40** aralığına indir,
+> **exaggeration'ı 0.70–0.90** yap, temperature'ı 0.85–1.00 dene ve referans
+> olarak duraklamaları belli, ifadeli bir kayıt kullan. Chatterbox'un kendi
+> önerisi de budur: düşük CFG + yüksek exaggeration daha canlı ve tempolu
+> konuşma üretir.
+
+### 8. Ses üret ve iptal
 
 **Ses üret** butonu işi kuyruğa alır. Üretim sırasında:
 
@@ -180,7 +220,7 @@ Diğer iki parametreyle karıştırmamak için:
 Model ilk açılışta bir kez yüklenir (~20–60 sn). Sonraki üretimler doğrudan
 başlar. Mac'te tipik hız: 5 saniyelik ses için ~25–50 saniye.
 
-### 8. Çıktı oynatıcı
+### 9. Çıktı oynatıcı
 
 Üretim bitince ses otomatik olarak yüklenir.
 
@@ -191,7 +231,7 @@ başlar. Mac'te tipik hız: 5 saniyelik ses için ~25–50 saniye.
 - **WAV indir** — 24 kHz 16-bit PCM, `echome_YYYYMMDD_HHMMSS.wav`
 - **Yeni sekmede aç** — sesi tarayıcının kendi oynatıcısında açar
 
-### 9. Son üretimler
+### 10. Son üretimler
 
 Son üretimler en yeniden eskiye listelenir.
 
@@ -212,6 +252,7 @@ Son üretimler en yeniden eskiye listelenir.
 | Exaggeration | `exaggeration` | `0.50` | 0.25 – 2.00 | 0.01 | Duygu yoğunluğu |
 | CFG weight | `cfg_weight` | `0.50` | 0.20 – 1.00 | 0.01 | Metne/referansa bağlılık |
 | Temperature | `temperature` | `0.80` | 0.05 – 5.00 | 0.01 | Örnekleme rastgeleliği |
+| Duraklama | `pause_style` | `marked` | `natural`, `marked`, `strong` | — | Noktalama duraklamaları |
 
 Tüm değerler tarayıcıda `localStorage`'a kaydedilir; sayfayı yenileyince son
 ayarların korunur. Virgüllü ondalık giriş (`0,80`) de kabul edilir.
@@ -248,9 +289,12 @@ Tarayıcı: GET /api/jobs/{id} ile durum/süre, ardından sesi oynat/indir
   nesnesini değiştirir. Her işte referans varsa yeniden hazırlanır, yoksa
   modelin `conds.pt` içindeki varsayılanına dönülür; böylece önceki işin sesi
   sızmaz.
-- **Parçalama:** Modelin ~1000 token sınırı nedeniyle uzun metinler bölünür.
-  Cümle sonu (`. ! ?`), ardından virgül/noktalı virgül, en son boşluk tercih
-  edilir.
+- **Parçalama ve duraklama:** Modelin ~1000 token sınırı nedeniyle metin
+  cümlelere bölünür. `pause_style` seçimine göre cümle sonu, `;`/`:` ve (güçlü
+  modda) virgül sonrasına sessizlik eklenir. Üç nokta cümle sonu sayılır;
+  Chatterbox'un `punc_norm` fonksiyonu onu virgüle çevirse bile duraklama
+  korunur. Çok uzun metinlerde segment sayısı 40 ile sınırlanır; komşu kısa
+  segmentler birleştirilir.
 - **Normalizasyon:** Referans ses 24 kHz mono'ya indirgenir; 20 saniyeden uzunu
   kırpılır. Bu, modelin beklediği biçimdir ve farklı dosya türlerini eşitler.
 - **Çıktı:** 16-bit PCM WAV. Dosya adı indirme anında yerel saatle üretilir.
@@ -324,6 +368,8 @@ docker run --rm -p 8760:8760 -e ECHOME_PASSWORD='güçlü-şifre' echome
 | `GET` | `/api/download/{id}` | WAV (attachment) |
 | `DELETE` | `/api/outputs/{id}` | Kaydı sil |
 
+`pause_style` alanı `natural`, `marked` (varsayılan) veya `strong` olabilir.
+
 Örnek:
 
 ```bash
@@ -332,6 +378,7 @@ curl -F "text=Merhaba dünya, bu bir deneme." \
      -F "exaggeration=0.5" \
      -F "cfg_weight=0.5" \
      -F "temperature=0.8" \
+     -F "pause_style=marked" \
      -F "reference=@referans.wav" \
      http://127.0.0.1:8760/api/jobs
 ```

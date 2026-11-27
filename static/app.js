@@ -20,7 +20,8 @@ const el = {
   text: $('#text'),
   charCount: $('#charCount'),
   clearText: $('#clearText'),
-  langButtons: $$('.segmented button'),
+  langButtons: $$('.segmented button[data-lang]'),
+  pauseButtons: $$('.segmented button[data-pause]'),
   dropzone: $('#dropzone'),
   refInput: $('#refInput'),
   dropEmpty: $('#dropEmpty'),
@@ -35,6 +36,7 @@ const el = {
   cfgNum: $('#cfgNum'),
   tempRange: $('#tempRange'),
   tempNum: $('#tempNum'),
+  expressivePreset: $('#expressivePreset'),
   generateBtn: $('#generateBtn'),
   generateLabel: $('#generateLabel'),
   cancelBtn: $('#cancelBtn'),
@@ -67,6 +69,7 @@ const state = {
   status: 'loading',
   wasLoading: false,
   lang: 'tr',
+  pause: 'marked',
   reference: null,
   refUrl: null,
   refAudio: null,
@@ -170,6 +173,7 @@ function savePrefs() {
       PREFS_KEY,
       JSON.stringify({
         lang: state.lang,
+        pause: state.pause,
         ex: el.exRange.value,
         cfg: el.cfgRange.value,
         temp: el.tempRange.value,
@@ -189,6 +193,9 @@ function loadPrefs() {
   }
 
   if (prefs.lang === 'tr' || prefs.lang === 'en') setLang(prefs.lang, false);
+  if (prefs.pause === 'natural' || prefs.pause === 'marked' || prefs.pause === 'strong') {
+    setPause(prefs.pause, false);
+  }
 
   const apply = (range, number, raw) => {
     let value = parseDecimal(raw);
@@ -213,6 +220,32 @@ function setLang(lang, persist = true) {
     button.setAttribute('aria-pressed', String(active));
   });
   if (persist) savePrefs();
+}
+
+function setPause(pause, persist = true) {
+  state.pause = pause;
+  el.pauseButtons.forEach((button) => {
+    const active = button.dataset.pause === pause;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  if (persist) savePrefs();
+}
+
+function setSliderValue(range, number, value) {
+  const next = clamp(value, parseFloat(range.min), parseFloat(range.max));
+  range.value = next.toFixed(2);
+  number.value = next.toFixed(2);
+  setRangeFill(range);
+}
+
+function applyExpressivePreset() {
+  setSliderValue(el.exRange, el.exNum, 0.8);
+  setSliderValue(el.cfgRange, el.cfgNum, 0.35);
+  setSliderValue(el.tempRange, el.tempNum, 0.9);
+  setPause('marked');
+  savePrefs();
+  toast('İfadeli ayarlar uygulandı: exaggeration 0.80 · CFG 0.35 · temperature 0.90');
 }
 
 /* ------------------------------------------------------------------ sliders */
@@ -477,6 +510,7 @@ async function generate() {
   form.append('exaggeration', parseFloat(el.exRange.value).toFixed(2));
   form.append('cfg_weight', parseFloat(el.cfgRange.value).toFixed(2));
   form.append('temperature', parseFloat(el.tempRange.value).toFixed(2));
+  form.append('pause_style', state.pause);
   if (state.reference) form.append('reference', state.reference, state.reference.name);
 
   resetProgress();
@@ -989,6 +1023,12 @@ function init() {
   el.langButtons.forEach((button) => {
     button.addEventListener('click', () => setLang(button.dataset.lang));
   });
+
+  // Pause profile
+  el.pauseButtons.forEach((button) => {
+    button.addEventListener('click', () => setPause(button.dataset.pause));
+  });
+  el.expressivePreset.addEventListener('click', applyExpressivePreset);
 
   // Text
   el.text.addEventListener('input', updateCharCount);

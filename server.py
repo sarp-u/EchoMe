@@ -42,7 +42,8 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 UPLOADS_DIR = BASE_DIR / "uploads"
-for _dir in (OUTPUTS_DIR, UPLOADS_DIR):
+VOICES_DIR = BASE_DIR / "voices"
+for _dir in (OUTPUTS_DIR, UPLOADS_DIR, VOICES_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -62,6 +63,46 @@ ALLOWED_REFERENCE_EXTS = {
 }
 OUTPUT_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 REFERENCE_SAMPLE_RATE = 24_000
+
+# Built-in demo voices. Chatterbox ships a single default voice, so a male /
+# female choice needs a short reference clip. On macOS we generate those once
+# with the system voices and keep them in `voices/` (gitignored). The clips are
+# not redistributed with the repo; every install creates its own.
+VOICE_LABELS = {
+    "default": "Varsayılan",
+    "female": "Kadın",
+    "male": "Erkek",
+    "custom": "Özel referans",
+}
+BUILTIN_VOICE_IDS = ("default", "female", "male")
+_VOICE_SPECS: dict[str, dict[str, Any]] = {
+    "female": {
+        "candidates": [
+            ("Yelda", "tr"),
+            ("Samantha", "en"),
+            ("Karen", "en"),
+            ("Moira", "en"),
+        ],
+    },
+    "male": {
+        "candidates": [
+            ("Daniel", "en"),
+            ("Alex", "en"),
+            ("Fred", "en"),
+        ],
+    },
+}
+_VOICE_TEXTS = {
+    "tr": (
+        "Merhaba! Ben EchoMe'nin demo sesiyim. Metinlerinizi doğal, akıcı ve "
+        "duygu dolu bir şekilde seslendiririm. Hadi, birlikte deneyelim!"
+    ),
+    "en": (
+        "Hello! I am an EchoMe demo voice. I read your texts naturally, clearly, "
+        "and with expression. Let's try it together!"
+    ),
+}
+_VOICE_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +506,110 @@ def normalize_reference(src: Path) -> tuple[Path, float]:
         raise
 
 
+def _say_voice_names() -> set[str]:
+    """Names installed in the macOS `say` voice list."""
+    try:
+        proc = subprocess.run(
+            ["say", "-v", "?"], capture_output=True, text=True, timeout=20
+        )
+        return {
+            line.split()[0]
+            for line in proc.stdout.splitlines()
+            if line.strip() and not line.startswith(" ")
+        }
+    except Exception:
+        return set()
+
+
+def _generate_builtin_voice(voice_name: str, language: str, dst: Path) -> None:
+    """Render a short reference clip with a macOS system voice."""
+    tmp = dst.with_name(f".{dst.stem}-{uuid.uuid4().hex[:6]}.aiff")
+    wav_tmp = dst.with_name(f".{dst.stem}-{uuid.uuid4().hex[:6]}.wav")
+    try:
+        proc = subprocess.run(
+            [
+                "say",
+                "-v",
+                voice_name,
+                "-r",
+                "170",
+                "-o",
+                str(tmp),
+                _VOICE_TEXTS.get(language, _VOICE_TEXTS["en"]),
+            ],
+            capture_output=True,
+            timeout=90,
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or b"").decode("utf-8", "ignore").strip()
+            raise RuntimeError(detail[:200] or "say komutu başarısız oldu.")
+
+        import librosa
+        import numpy as np
+        import soundfile as sf
+
+        samples, _ = librosa.load(str(tmp), sr=REFERENCE_SAMPLE_RATE, mono=True)
+        if samples.size == 0:
+            raise ValueError("Demo ses boş üretildi.")
+        samples, _ = librosa.effects.trim(samples, top_db=35)
+        samples = samples[: int(REFERENCE_SAMPLE_RATE * 12)]
+        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+        if peak > 0:
+            samples = samples * (0.89 / peak)
+        sf.write(str(wav_tmp), samples, REFERENCE_SAMPLE_RATE, subtype="PCM_16")
+        wav_tmp.replace(dst)
+    finally:
+        tmp.unlink(missing_ok=True)
+        wav_tmp.unlink(missing_ok=True)
+
+
+def builtin_voice_path(voice_id: str) -> Optional[Path]:
+    if voice_id not in _VOICE_SPECS:
+        return None
+    path = VOICES_DIR / f"{voice_id}.wav"
+    if path.exists() and path.stat().st_size > 1024:
+        return path
+    return None
+
+
+def ensure_builtin_voice(voice_id: str) -> Optional[Path]:
+    """Create one demo voice if needed. Returns None when `say` is absent."""
+    path = builtin_voice_path(voice_id)
+    if path is not None or voice_id not in _VOICE_SPECS:
+        return path
+    if sys.platform != "darwin" or shutil.which("say") is None:
+        return None
+
+    with _VOICE_LOCK:
+        path = builtin_voice_path(voice_id)
+        if path is not None:
+            return path
+        available = _say_voice_names()
+        for name, language in _VOICE_SPECS[voice_id]["candidates"]:
+            if name not in available:
+                continue
+            try:
+                _generate_builtin_voice(name, language, VOICES_DIR / f"{voice_id}.wav")
+                log.info("Demo %s voice created with `say -v %s`.", voice_id, name)
+                return builtin_voice_path(voice_id)
+            except Exception as exc:
+                log.warning("Demo %s voice via %s failed: %s", voice_id, name, exc)
+        log.warning("No usable macOS voice found for demo %s voice.", voice_id)
+        return None
+
+
+def ensure_builtin_voices() -> None:
+    for voice_id in _VOICE_SPECS:
+        ensure_builtin_voice(voice_id)
+
+
+def _audio_duration(path: Path) -> float:
+    import soundfile as sf
+
+    info = sf.info(str(path))
+    return float(info.frames) / float(info.samplerate)
+
+
 def _cleanup_stale_uploads() -> None:
     cutoff = time.time() - 24 * 3600
     try:
@@ -487,6 +632,7 @@ def _run_job(
     cfg_weight: float,
     temperature: float,
     pause_style: str,
+    voice: str,
     reference: Optional[Path],
     reference_duration: Optional[float],
 ) -> None:
@@ -600,6 +746,8 @@ def _run_job(
                 "cfg_weight": round(cfg_weight, 2),
                 "temperature": round(temperature, 2),
                 "pause_style": pause_style,
+                "voice": voice,
+                "voice_label": VOICE_LABELS.get(voice, voice),
                 "chunks": len(segments),
                 "reference_duration": round(reference_duration, 2) if reference_duration else None,
                 "created_at": created_at.isoformat(),
@@ -654,6 +802,7 @@ def _start_job(
     cfg_weight: float,
     temperature: float,
     pause_style: str,
+    voice: str,
     reference: Optional[Path],
     reference_duration: Optional[float],
 ) -> dict:
@@ -685,6 +834,7 @@ def _start_job(
             cfg_weight,
             temperature,
             pause_style,
+            voice,
             reference,
             reference_duration,
         ),
@@ -769,6 +919,12 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     _cleanup_stale_uploads()
     MODEL.start()
+    # Model loading runs in the background, so demo voices are created while
+    # the UI is still waiting for the model to become ready.
+    try:
+        ensure_builtin_voices()
+    except Exception as exc:  # pragma: no cover - best effort
+        log.warning("Demo voices could not be prepared: %s", exc)
     yield
 
 
@@ -792,6 +948,14 @@ async def api_status():
         "max_reference_mb": MAX_REFERENCE_BYTES // (1024 * 1024),
         "python": sys.version.split()[0],
         "outputs": len(_list_outputs(limit=999)),
+        "voices": [
+            {
+                "id": voice_id,
+                "label": VOICE_LABELS[voice_id],
+                "available": voice_id == "default" or builtin_voice_path(voice_id) is not None,
+            }
+            for voice_id in BUILTIN_VOICE_IDS
+        ],
     }
 
 
@@ -803,6 +967,7 @@ async def create_job(
     cfg_weight: float = Form(0.5),
     temperature: float = Form(0.8),
     pause_style: str = Form("marked"),
+    voice: str = Form("default"),
     reference: Optional[UploadFile] = File(None),
 ):
     text = (text or "").strip()
@@ -826,6 +991,11 @@ async def create_job(
             status_code=400,
             detail="Geçersiz duraklama stili. natural, marked veya strong seçin.",
         )
+    if voice not in BUILTIN_VOICE_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail="Geçersiz ses seçimi. default, female veya male seçin.",
+        )
     if len(build_segments(text, pause_style=pause_style)) > 40:
         raise HTTPException(
             status_code=400,
@@ -839,6 +1009,7 @@ async def create_job(
     raw_path: Optional[Path] = None
     norm_path: Optional[Path] = None
     ref_duration: Optional[float] = None
+    selected_voice = voice
 
     if reference is not None and reference.filename:
         suffix = Path(reference.filename).suffix.lower()
@@ -867,6 +1038,7 @@ async def create_job(
             norm_path, ref_duration = await run_in_threadpool(normalize_reference, raw_path)
             raw_path.unlink(missing_ok=True)
             raw_path = None
+            selected_voice = "custom"
         except HTTPException:
             if raw_path:
                 raw_path.unlink(missing_ok=True)
@@ -878,6 +1050,27 @@ async def create_job(
                 if path:
                     path.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail=str(exc))
+    elif voice != "default":
+        # Use a demo voice clip. Copy it into uploads so the normal job cleanup
+        # removes the copy, never the shared original.
+        source = builtin_voice_path(voice)
+        if source is None:
+            source = await run_in_threadpool(ensure_builtin_voice, voice)
+        if source is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Seçilen demo ses bu cihazda hazır değil. "
+                    "Varsayılan sesi seçebilir veya kendi referansını yükleyebilirsin."
+                ),
+            )
+        norm_path = UPLOADS_DIR / f"{uuid.uuid4().hex}.wav"
+        try:
+            shutil.copyfile(source, norm_path)
+            ref_duration = await run_in_threadpool(_audio_duration, norm_path)
+        except Exception:
+            norm_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Demo ses hazırlanamadı.")
 
     job = _start_job(
         text,
@@ -886,6 +1079,7 @@ async def create_job(
         float(cfg_weight),
         float(temperature),
         pause_style,
+        selected_voice,
         norm_path,
         ref_duration,
     )

@@ -22,6 +22,9 @@ const el = {
   clearText: $('#clearText'),
   langButtons: $$('.segmented button[data-lang]'),
   pauseButtons: $$('.segmented button[data-pause]'),
+  voiceButtons: $$('.segmented button[data-voice]'),
+  voicePick: $('#voicePick'),
+  voiceHint: $('#voiceHint'),
   dropzone: $('#dropzone'),
   refInput: $('#refInput'),
   dropEmpty: $('#dropEmpty'),
@@ -70,6 +73,9 @@ const state = {
   wasLoading: false,
   lang: 'tr',
   pause: 'marked',
+  voice: 'default',
+  voiceAvailability: { default: true, female: false, male: false },
+  voiceFallbackNotified: false,
   reference: null,
   refUrl: null,
   refAudio: null,
@@ -174,6 +180,7 @@ function savePrefs() {
       JSON.stringify({
         lang: state.lang,
         pause: state.pause,
+        voice: state.voice,
         ex: el.exRange.value,
         cfg: el.cfgRange.value,
         temp: el.tempRange.value,
@@ -195,6 +202,9 @@ function loadPrefs() {
   if (prefs.lang === 'tr' || prefs.lang === 'en') setLang(prefs.lang, false);
   if (prefs.pause === 'natural' || prefs.pause === 'marked' || prefs.pause === 'strong') {
     setPause(prefs.pause, false);
+  }
+  if (prefs.voice === 'default' || prefs.voice === 'female' || prefs.voice === 'male') {
+    setVoice(prefs.voice, false);
   }
 
   const apply = (range, number, raw) => {
@@ -229,6 +239,39 @@ function setPause(pause, persist = true) {
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   });
+  if (persist) savePrefs();
+}
+
+function updateVoiceAvailability() {
+  const hasReference = !!state.reference;
+  el.voicePick.classList.toggle('is-overridden', hasReference);
+
+  el.voiceButtons.forEach((button) => {
+    const voice = button.dataset.voice;
+    const available = voice === 'default' || state.voiceAvailability[voice] !== false;
+    const active = voice === state.voice;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    button.disabled = hasReference || !available;
+    if (hasReference) {
+      button.title = 'Özel referans yüklü; bu seçim kullanılmıyor.';
+    } else if (!available) {
+      button.title = 'Bu demo ses bu cihazda hazır değil.';
+    } else {
+      button.title = '';
+    }
+  });
+
+  el.voiceHint.textContent = hasReference
+    ? 'Özel referans yüklü; üretimde bu ses kullanılacak.'
+    : !state.voiceAvailability.female && !state.voiceAvailability.male && state.status === 'ready'
+      ? 'Demo sesler bu cihazda yok. Varsayılan sesi kullan veya kendi referansını yükle.'
+      : 'Kadın ve erkek demo sesleri cihazında bir kez oluşturulur. En iyi sonuç için kendi referansını yükle.';
+}
+
+function setVoice(voice, persist = true) {
+  state.voice = voice === 'female' || voice === 'male' ? voice : 'default';
+  updateVoiceAvailability();
   if (persist) savePrefs();
 }
 
@@ -311,6 +354,7 @@ function clearReference() {
   el.refPlay.querySelector('.i-play').hidden = false;
   el.refPlay.querySelector('.i-stop').hidden = true;
   el.refPlay.setAttribute('aria-label', 'Referansı dinle');
+  updateVoiceAvailability();
 }
 
 function setReference(file) {
@@ -348,6 +392,7 @@ function setReference(file) {
     { once: true },
   );
   state.refAudio.load();
+  updateVoiceAvailability();
 }
 
 function setRefPlaying(playing) {
@@ -410,6 +455,23 @@ function applyStatus(data) {
     el.modelPill.dataset.state = 'loading';
     el.modelText.textContent = 'Model yükleniyor';
     el.modelError.hidden = true;
+  }
+
+  if (Array.isArray(data.voices)) {
+    const availability = { default: true, female: false, male: false };
+    data.voices.forEach((voice) => {
+      if (voice && voice.id in availability) availability[voice.id] = voice.available !== false;
+    });
+    state.voiceAvailability = availability;
+    if (state.voice !== 'default' && !availability[state.voice]) {
+      setVoice('default');
+      if (!state.voiceFallbackNotified) {
+        state.voiceFallbackNotified = true;
+        toast('Seçili demo ses bu cihazda hazır değil; varsayılan sese dönüldü.', 'info');
+      }
+    } else {
+      updateVoiceAvailability();
+    }
   }
 
   syncGenerateButton();
@@ -503,6 +565,10 @@ async function generate() {
     toast(`Metin en fazla ${MAX_TEXT} karakter olabilir.`, 'error');
     return;
   }
+  if (!state.reference && state.voice !== 'default' && state.voiceAvailability[state.voice] === false) {
+    toast('Seçilen demo ses bu cihazda hazır değil. Varsayılan sesi seç veya referans yükle.', 'error');
+    return;
+  }
 
   const form = new FormData();
   form.append('text', text);
@@ -511,6 +577,7 @@ async function generate() {
   form.append('cfg_weight', parseFloat(el.cfgRange.value).toFixed(2));
   form.append('temperature', parseFloat(el.tempRange.value).toFixed(2));
   form.append('pause_style', state.pause);
+  form.append('voice', state.voice);
   if (state.reference) form.append('reference', state.reference, state.reference.name);
 
   resetProgress();
@@ -767,7 +834,9 @@ function buildChips(clip) {
   add(`ex ${Number(clip.exaggeration ?? 0.5).toFixed(2)}`);
   add(`cfg ${Number(clip.cfg_weight ?? 0.5).toFixed(2)}`);
   if (clip.temperature != null) add(`temp ${Number(clip.temperature).toFixed(2)}`);
-  if (clip.reference_duration) add('klon ses');
+  if (clip.voice === 'female') add('kadın ses');
+  else if (clip.voice === 'male') add('erkek ses');
+  else if (clip.reference_duration) add('klon ses');
   if (clip.chunks > 1) add(`${clip.chunks} segment`);
 }
 
@@ -1016,6 +1085,7 @@ function init() {
   bindSlider(el.cfgRange, el.cfgNum);
   bindSlider(el.tempRange, el.tempNum);
   loadPrefs();
+  updateVoiceAvailability();
   setRangeFill(el.seek);
   updateCharCount();
 
@@ -1029,6 +1099,11 @@ function init() {
     button.addEventListener('click', () => setPause(button.dataset.pause));
   });
   el.expressivePreset.addEventListener('click', applyExpressivePreset);
+
+  // Built-in demo voice
+  el.voiceButtons.forEach((button) => {
+    button.addEventListener('click', () => setVoice(button.dataset.voice));
+  });
 
   // Text
   el.text.addEventListener('input', updateCharCount);

@@ -769,6 +769,27 @@ textarea:focus {
   font-size: 12px;
 }
 
+.segmented button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.voice-pick {
+  margin-top: 14px;
+}
+
+.voice-pick .label-row {
+  margin-bottom: 7px;
+}
+
+.voice-pick .hint {
+  margin-top: 7px;
+}
+
+.voice-pick.is-overridden .segmented {
+  opacity: 0.5;
+}
+
 .value-input {
   width: 72px;
   height: 32px;

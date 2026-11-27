@@ -35,8 +35,8 @@ RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(
 COPY server.py ./
 COPY static ./static
 
-RUN mkdir -p outputs uploads \
-    && chmod -R 777 outputs uploads /app/.cache
+RUN mkdir -p outputs uploads voices \
+    && chmod -R 777 outputs uploads voices /app/.cache
 
 EXPOSE 8760
 

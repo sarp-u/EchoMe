@@ -4,5 +4,6 @@ __pycache__/
 venv/
 outputs/
 uploads/
+voices/
 .DS_Store
 *.log

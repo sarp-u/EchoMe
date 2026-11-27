@@ -21,6 +21,7 @@ Silicon'da MPS ile) çalışır; internete açsan bile çıkarım yerelde kalır
   - [Konuşma metni](#1-konuşma-metni)
   - [Dil](#2-dil--language_id)
   - [Referans ses](#3-referans-ses--audio_prompt_path)
+  - [Hazır ses seçimi](#hazır-ses-seçimi--voice)
   - [Exaggeration](#4-exaggeration)
   - [CFG weight](#5-cfg-weight)
   - [Temperature](#6-temperature)
@@ -44,6 +45,8 @@ Silicon'da MPS ile) çalışır; internete açsan bile çıkarım yerelde kalır
 - 🎙️ **Metinden sese** — Chatterbox Multilingual, `tr` ve `en`
 - 🗣️ **Ses klonlama** — WAV, MP3, FLAC, OGG veya M4A referans; otomatik olarak
   24 kHz mono WAV'a çevrilir
+- 🗳️ **Hazır ses seçimi** — referans yüklemeden Varsayılan / Kadın / Erkek
+  (demo sesler macOS'ta cihazın sistem seslerinden oluşturulur)
 - 🎚️ **Üç ince ayar** — exaggeration, CFG weight ve temperature; kaydırıcı +
   elle giriş, 0.01 adım
 - ⏸️ **Duraklama profili** — Doğal / Belirgin / Güçlü; noktalama duraklamalarını
@@ -95,8 +98,8 @@ bozar.
 
 ### 3. Referans ses · `audio_prompt_path`
 
-Klonsuz, sıfırdan üretim için modelin kendi varsayılan sesi kullanılır. Kendi
-sesini (veya izinli bir sesi) kullanmak için buraya bir kayıt bırak.
+Referans yüklemezsen hazır ses seçimi kullanılır. Kendi sesini (veya izinli
+bir sesi) kullanmak için buraya bir kayıt bırak.
 
 - **Kabul edilen biçimler:** WAV (önerilen), MP3, FLAC, OGG, M4A
 - **Boyut:** en fazla 30 MB
@@ -106,10 +109,36 @@ sesini (veya izinli bir sesi) kullanmak için buraya bir kayıt bırak.
 - Yükleme sonrası dosya tarayıcıda değil, sunucuda **24 kHz mono WAV**'a
   normalize edilir (librosa/soundfile; macOS'ta `afconvert` yedeği). Böylece
   model her formatı aynı biçimde görür.
-- Boş bırakılırsa modelin `conds.pt` içindeki varsayılan sesi kullanılır.
+- Boş bırakılırsa aşağıdaki **Hazır ses seçimi** kullanılır. Özel referans
+  yüklendiğinde hazır ses seçimi devre dışı kalır.
 
 > İyi referans: 5–15 saniye, sessiz ortam, tek konuşmacı, duygusal olarak nötr
 > ve net bir kayıt. Arka plan müziği veya yankı klon kalitesini düşürür.
+
+### Hazır ses seçimi · `voice`
+
+Kendi referansını yüklemiyorsan **Varsayılan**, **Kadın** veya **Erkek**
+arasından seçim yapabilirsin. Varsayılan, Chatterbox'un kendi `conds.pt`
+sesidir; Chatterbox doğrudan kadın/erkek ses parametresi sunmaz. EchoMe diğer
+iki seçim için Mac'te kurulu sistem sesleriyle bir kez kısa demo kayıtları
+oluşturur ve bunları Chatterbox'a **yerel referans** olarak verir. Bu kayıtlar
+`voices/` içinde kalır ve GitHub'a yüklenmez. Çıktı yine Chatterbox tarafından
+üretilir; sistemin `say` sesinin doğrudan okunması değildir.
+
+- **Kadın:** Mac'te varsa Türkçe Yelda; yoksa uygun İngilizce sistem sesi.
+- **Erkek:** Mac'te varsa Daniel; yoksa uygun İngilizce sistem sesi. Türkçe
+  metinlerde aksan/telaffuz değişebilir.
+- Kendi referansını seçersen **her zaman o ses kullanılır**; hazır ses
+  düğmeleri geçici olarak pasif olur. Referansı kaldırınca önceki hazır ses
+  seçimine dönersin.
+- `say` bulunmayan Linux / Docker ortamlarında, `voices/female.wav` ve
+  `voices/male.wav` dosyalarını sen sağlamadıkça demo düğmeleri pasif olur.
+  Varsayılan ve kendi referansını yükleme çalışmaya devam eder. Elle sağlanan
+  demo kayıtlar da kısa, net ve 24 kHz mono WAV olmalıdır.
+
+Bu seçimler ses tınısı için başlangıç noktalarıdır; modelin ürettiği ses
+kesin olarak aynı çıkmayabilir. Daha iyi Türkçe erkek/kadın sesi istiyorsan
+kendi izinli, net 5–15 saniyelik referans kaydını kullan.
 
 ### 4. Exaggeration
 
@@ -249,6 +278,7 @@ Son üretimler en yeniden eskiye listelenir.
 | --- | --- | --- | --- | --- | --- |
 | Dil | `language_id` | `tr` | `tr`, `en` | — | Konuşma dili |
 | Referans ses | `reference` | yok | WAV/MP3/FLAC/OGG/M4A, ≤30 MB | — | Ses klonu |
+| Hazır ses | `voice` | `default` | `default`, `female`, `male` | — | Referans yüklenmediğinde ses seçimi |
 | Exaggeration | `exaggeration` | `0.50` | 0.25 – 2.00 | 0.01 | Duygu yoğunluğu |
 | CFG weight | `cfg_weight` | `0.50` | 0.20 – 1.00 | 0.01 | Metne/referansa bağlılık |
 | Temperature | `temperature` | `0.80` | 0.05 – 5.00 | 0.01 | Örnekleme rastgeleliği |
@@ -264,7 +294,7 @@ ayarların korunur. Virgüllü ondalık giriş (`0,80`) de kabul edilir.
 ```
 Tarayıcı (static/)
    │  multipart form: text, language_id, exaggeration,
-   │  cfg_weight, temperature, reference dosyası
+   │  cfg_weight, temperature, pause_style, voice, reference dosyası
    ▼
 FastAPI (server.py)
    │  doğrulama → referansı 24 kHz mono WAV'a normalize et
@@ -359,7 +389,7 @@ docker run --rm -p 8760:8760 -e ECHOME_PASSWORD='güçlü-şifre' echome
 | Yöntem | Yol | Açıklama |
 | --- | --- | --- |
 | `GET` | `/healthz` | Şifresiz sağlık kontrolü |
-| `GET` | `/api/status` | Model durumu, cihaz, örnekleme hızı, çıktı sayısı |
+| `GET` | `/api/status` | Model durumu, cihaz, örnekleme hızı, hazır seslerin kullanılabilirliği, çıktı sayısı |
 | `POST` | `/api/jobs` | Yeni üretim (multipart) |
 | `GET` | `/api/jobs/{id}` | Durum, aşama, süre, sonuç |
 | `POST` | `/api/jobs/{id}/cancel` | İptal isteği |
@@ -369,6 +399,8 @@ docker run --rm -p 8760:8760 -e ECHOME_PASSWORD='güçlü-şifre' echome
 | `DELETE` | `/api/outputs/{id}` | Kaydı sil |
 
 `pause_style` alanı `natural`, `marked` (varsayılan) veya `strong` olabilir.
+`voice` alanı `default` (varsayılan), `female` veya `male` olabilir. Dosya
+gönderildiğinde `reference`, `voice` seçimini geçersiz kılar.
 
 Örnek:
 
@@ -379,7 +411,7 @@ curl -F "text=Merhaba dünya, bu bir deneme." \
      -F "cfg_weight=0.5" \
      -F "temperature=0.8" \
      -F "pause_style=marked" \
-     -F "reference=@referans.wav" \
+     -F "voice=female" \
      http://127.0.0.1:8760/api/jobs
 ```
 

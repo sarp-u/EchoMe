@@ -120,7 +120,19 @@
               </div>
             </div>
           </div>
-          <p class="hint">Boş bırakırsan modelin varsayılan sesi kullanılır.</p>
+
+          <div class="voice-pick" id="voicePick">
+            <div class="label-row">
+              <span class="label" id="voiceLabel">Referans yoksa kullanılacak ses</span>
+              <span class="hint inline">demo</span>
+            </div>
+            <div class="segmented compact" role="group" aria-labelledby="voiceLabel">
+              <button type="button" data-voice="default" class="active" aria-pressed="true">Varsayılan</button>
+              <button type="button" data-voice="female" aria-pressed="false">Kadın</button>
+              <button type="button" data-voice="male" aria-pressed="false">Erkek</button>
+            </div>
+            <p class="hint" id="voiceHint">Kadın ve erkek demo sesleri cihazında bir kez oluşturulur. En iyi sonuç için kendi referansını yükle.</p>
+          </div>
         </div>
 
         <div class="sliders">
